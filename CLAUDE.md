@@ -31,7 +31,7 @@ Outputs land in `out/`. The 2006 reference binaries at `binw/` are intentionally
 4. **sb / sc / sd / pctest** — TASM (asm helpers) + Watcom `wcl386 -l=dos32a` (32-bit pmode apps with embedded dos32a stub).
 5. **sdebug.lib** — TASM + Watcom `wlib` (static library).
 6. **sver** — Watcom `wcl -lr` (pure 16-bit DOS C program).
-7. **ss.exe** — *NOT* rebuilt. `src/ss/main.c:517` calls `PrintC()` which isn't defined in the published source tree (only `Print`, `Print_At`, `CloseAllWindows` in `iface.c`). The 2006 SS.EXE is copied from `binw/ss.exe` unchanged. If we ever locate or stub the missing function, switch the relevant step in `make.bat`.
+7. **ss.exe** — TASM (`setup.asm`) + Watcom `wcl386 -l=dos32a` (32-bit pmode app, ~87 KB). Builds after the v9.12.1 case-mismatch fix in `setup.asm` (`Printc_` → `PrintC_` to match the C-side `PrintC(...)` callers; Watcom 11 was case-insensitive at link time, OW v2 is case-strict).
 
 ### Toolchain layout inside the container
 

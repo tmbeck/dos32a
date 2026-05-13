@@ -46,7 +46,7 @@
 PUBLIC	VideoInit_, VideoReset_
 PUBLIC	DrawBackground_
 PUBLIC	GetKey_
-PUBLIC	Printc_, Prints_, SetPos_, SetColor_, SetBackColor_, SetBlink_
+PUBLIC	PrintC_, Prints_, SetPos_, SetColor_, SetBackColor_, SetBlink_
 PUBLIC	OpenWindow_, DrawWindow_, CloseWindow_, ShowCursor_, PrintHelp_
 PUBLIC	get_himem_size_, get_lomem_size_, get_cpu_type_
 PUBLIC	get_sys_type_, get_dosmem_used_, get_total_mem_, get_dpmi_bufsize_
@@ -544,7 +544,7 @@ GetKey_:
 	ret
 
 
-Printc_:
+PrintC_:
 	pushad
 	cmp	al,0Ah
 	jz	@@1
@@ -584,7 +584,7 @@ Prints_:
 	inc	esi
 	test	al,al
 	jz	@@done
-	call	Printc_
+	call	PrintC_
 	inc	_xpos
 	cmp	_xpos,80
 	jae	@@1
@@ -727,7 +727,7 @@ PrintHelp_:
 	inc	_ypos
 	mov	_xpos,3
 	jmp	@@0
-@@1:	call	Printc_
+@@1:	call	PrintC_
 	inc	_xpos
 	jmp	@@0
 
@@ -881,16 +881,16 @@ draw_window:
 	mov	_xpos,al
 	mov	_ypos,dl
 	mov	al,	'É'
-	call	Printc_
+	call	PrintC_
 	inc	_xpos
 	mov	ecx,_xwinlen
 	sub	ecx,2
 	mov	al,	'Í'
-@@3:	call	Printc_
+@@3:	call	PrintC_
 	inc	_xpos
 	loop	@@3
 	mov	al,	'»'
-	call	Printc_
+	call	PrintC_
 
 	mov	eax,_xwinpos
 	mov	edx,_ywinpos
@@ -900,11 +900,11 @@ draw_window:
 	mov	ecx,_ywinlen
 	sub	ecx,2
 	mov	al,	'º'
-@@4:	call	Printc_
+@@4:	call	PrintC_
 	inc	_ypos
 	loop	@@4
 	mov	al,	'È'
-	call	Printc_
+	call	PrintC_
 
 	mov	eax,_xwinpos
 	mov	edx,_ywinpos
@@ -916,11 +916,11 @@ draw_window:
 	mov	ecx,_ywinlen
 	sub	ecx,2
 	mov	al,	'º'
-@@5:	call	Printc_
+@@5:	call	PrintC_
 	inc	_ypos
 	loop	@@5
 	mov	al,	'¼'
-	call	Printc_
+	call	PrintC_
 
 	mov	eax,_xwinpos
 	mov	edx,_ywinpos
@@ -932,7 +932,7 @@ draw_window:
 	mov	ecx,_xwinlen
 	sub	ecx,2
 	mov	al,	'Í'
-@@6:	call	Printc_
+@@6:	call	PrintC_
 	inc	_xpos
 	loop	@@6
 

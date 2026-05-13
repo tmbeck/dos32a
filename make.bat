@@ -56,17 +56,11 @@ wcl386 %WCLFLAGS% -l=dos32a -fe=sc -k65536 scomp.obj sload.obj encode.c main.c >
 copy sc.exe d:\out\ >> d:\build.log
 
 @rem ----- 6) SS - SUNSYS Setup Utility -----
-@rem
-@rem SS is NOT rebuilt from source. The 2006 source release is incomplete:
-@rem src/ss/main.c calls PrintC() at line 517 but no definition exists in
-@rem the published source tree (iface.c defines only Print, Print_At,
-@rem CloseAllWindows). The 2006 SS.EXE clearly linked successfully with a
-@rem private PrintC implementation that never made it to the public release.
-@rem Until that is identified or stubbed, we ship the 2006 SS.EXE unchanged
-@rem (functionally current, since the SS source is otherwise untouched in
-@rem v9.12.1) by copying it from binw/.
-echo --- ss (2006 original, not rebuildable, see make.bat) --- >> d:\build.log
-copy d:\binw\ss.exe d:\out\ >> d:\build.log
+echo --- ss --- >> d:\build.log
+cd d:\src\ss
+tasm32 %TASMFLAGS% setup.asm >> d:\build.log
+wcl386 %WCLFLAGS% -l=dos32a -fe=ss -k65536 setup.obj main.c >> d:\build.log
+copy ss.exe d:\out\ >> d:\build.log
 
 @rem ----- 7) SD - SUNSYS Debugger -----
 echo --- sd --- >> d:\build.log

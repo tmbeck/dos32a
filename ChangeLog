@@ -3,15 +3,15 @@
 			*****************************************
 
 
-[2026-05-12]
+[2026-05-13]
 DOS/32 Advanced DOS Extender, version 9.1.2.1
 =============================================
 
   Maintenance release on top of v9.1.2; no API or behavior changes for
-  applications that worked correctly on v9.1.2. Two clear bugs identified
-  in a code audit are fixed; no other source changes. Build harness is
-  containerized (DOSBox + Borland TASM 5 + TLINK 7) for reproducibility on
-  modern hosts.
+  applications that worked correctly on v9.1.2. Three clear bugs identified
+  by source audit + build attempt are fixed. Build harness is containerized
+  (DOSBox-X + Borland TASM 5 + TLINK 7 + Open Watcom v2) for reproducibility
+  on modern hosts.
 
 DOS Extender (DOS32A.EXE):
 --------------------------
@@ -38,6 +38,33 @@ DOS Extender (DOS32A.EXE):
   Reproduction: run an MZ-wrapped Windows PE under DOS/32A on the pre-fix
   binary; error 3003h surfaces instead of the documented preliminary PE
   recognition added in v9.1.0.
+
+
+SUNSYS Setup Utility (SS.EXE):
+------------------------------
++ Bugfix: src/ss/setup.asm declared the asm symbol `Printc_` (lowercase
+  `c`), but src/ss/main.c and src/ss/iface.c both call `PrintC(...)`
+  (uppercase `C`). Watcom 11.0's wlink was case-insensitive by default,
+  so the link succeeded and the original 2006 SS.EXE was produced. Modern
+  linkers (OW v2 wlink, etc.) are case-strict and refuse to resolve the
+  reference, breaking the SS build entirely.
+
+  Fix: renamed the asm export and all 10 internal call sites in setup.asm
+  from `Printc_` to `PrintC_`. No runtime semantics change.
+
+  Reproduction: attempt to build SS from the pre-fix v9.1.2 source with
+  any case-strict linker (e.g. OW v2's wlink); link fails with
+  "undefined symbol PrintC_".
+
++ Restored: src/ss/setup.asm had its CP437 box-drawing character literals
+  (`mov al,'<box-char>'` at 10 sites) corrupted to UTF-8 replacement
+  characters (`�` = `EF BF BD`) somewhere in a prior import. TASM rejects
+  these as "constant too large" since they're three bytes in a single
+  char literal. Restored the original CP437 bytes from yetmorecode/dos32a-ng
+  @legacy-912 (which has a clean snapshot of the same 2006 source).
+
+  This is a repo-import bug, not a 2006-source bug. No effect on
+  pre-import 2006 SS.EXE behavior.
 
 
 [2006-04-20]
