@@ -133,7 +133,7 @@ The 2006 release shipped six companion utilities. Our container build currently 
 
 ## Things to know when editing
 
-- This is the v9.12 source dropped on top of v8.00's tree. If you see references to v8.00 in older docs (`readme.1st`, `docs/`) and v9.12 in newer ones (`ChangeLog`, `updates.txt`, top-level `readme`), that mismatch is intentional and not a bug to fix.
+- This is the v9.12 source dropped on top of v8.00's tree. If you see references to v8.00 in older docs (`docs/historical/readme.1st`, the HTML manual under `docs/html/`) and v9.12 in newer ones (`CHANGELOG.md`, `docs/historical/updates.txt`, `docs/historical/readme`), that mismatch is intentional and not a bug to fix.
 - `src/_todo.txt` and `src/dos32a/changes.txt` are the author's own working files — useful context, not to be cleaned up.
 - `.gitignore` excludes `*.obj/*.exe/*.lib/*.map/*.exp/*.pch/*.dll/*.lst` everywhere **except** `binw/`, `examples/`, `l32/`, and `pctest/` (which carry committed binaries from the v9.12 release) and `bin/` (vendored Borland TASM/TLINK — `*.EXE` allowed there via gitattribute).
 - Source assembly files require `STDDEF.INC` (in `src/sutils/misc/`) and the C side requires headers from `h32/` (`typedefs.h`, `debug.h`, `d32a.h`).

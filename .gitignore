@@ -1,5 +1,11 @@
 # Object files
 *.obj
+*.OBJ
+
+# Build logs (dosbox-x redirects upcase filenames in mounted dirs)
+*.log
+*.LOG
+/build.log
 
 # Linker output
 *.map
