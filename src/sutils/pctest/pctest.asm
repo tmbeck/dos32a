@@ -78,11 +78,233 @@ PUBLIC	test_low_stosw_, test_low_stosd_
 PUBLIC	test_high_stosw_, test_high_stosd_
 PUBLIC	test_vid_stosw_, test_vid_stosd_
 
+PUBLIC	calibrate_tsc_		; v9.12.1: rdtsc-based timer init/calibration
+PUBLIC	has_tsc_, tsc_freq_hz_
+
 ;extrn	Debug_		: near
 include	stddef.inc
 
+.DATA
+; v9.12.1 -- TSC-based timing additions.
+; calibrate_tsc_ probes CPUID for the TSC feature flag, and if present,
+; measures CPU clock speed against PIT channel 2 to compute the cycles-
+; per-PIT-tick scaling factor. The 12 memory benchmarks (test_low/high/vid_*)
+; then use TIMER_START / TIMER_STOP macros which return PIT-equivalent units
+; either way, so main.c's existing PIT-Hz math (timer_time = 1193181)
+; works unchanged.
+;
+; test_int_ and test_irq_ stay on direct PIT use; their PIT setup spans a
+; mode-switch round-trip (PM->RM->PM via int 80h) and the RM handler reads
+; the PIT directly. Converting those would require a separate cross-mode
+; clock sync; the relative numbers there are already meaningful as-is.
+
+has_tsc		db 0	; nonzero if rdtsc available + calibrated
+cycles_per_tick	dd 0	; rdtsc cycles per PIT tick (= cpu_clock_hz / 1193181)
+tsc_freq_hz	dd 0	; measured CPU clock frequency in Hz (informational)
+tsc_start_lo	dd 0	; rdtsc snapshot - low 32 bits
+tsc_start_hi	dd 0	; rdtsc snapshot - high 32 bits
+
 .CODE
-;ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
+
+;=============================================================================
+; TIMER_START / TIMER_STOP macros.
+;
+; Replaces the inline-PIT-program/inline-PIT-read pattern used by the 12
+; memory benchmarks. With TSC: snapshots rdtsc into tsc_start_*, on stop
+; computes (delta_cycles / cycles_per_tick) and returns it in EAX. Without
+; TSC: falls through to the legacy PIT channel-2 program/read. Either
+; way EAX is loaded with a PIT-equivalent tick count on return from STOP.
+;
+; Clobbers: EAX, EDX. Preserves: ECX, ESI, EDI, EBX. Callers don't need
+; to save state around these â€” same contract as the inline-PIT code.
+
+TIMER_START MACRO
+	LOCAL @@pit, @@done
+	cmp	byte ptr [has_tsc],0
+	jz	@@pit
+	rdtsc
+	mov	[tsc_start_lo],eax
+	mov	[tsc_start_hi],edx
+	jmp	@@done
+@@pit:	mov	al,0B6h
+	out	43h,al
+	in	al,61h
+	or	al,01h
+	out	61h,al
+	xor	al,al
+	out	42h,al
+	out	42h,al
+@@done:
+ENDM
+
+TIMER_STOP MACRO
+	LOCAL @@pit, @@tsc_done, @@done
+	cmp	byte ptr [has_tsc],0
+	jz	@@pit
+	rdtsc
+	sub	eax,[tsc_start_lo]
+	sbb	edx,[tsc_start_hi]
+	; If elapsed cycles overflow 32 bits the test ran for > ~3s â€” saturate.
+	test	edx,edx
+	jz	@@tsc_done
+	mov	eax,0FFFFFFFFh
+@@tsc_done:
+	; Convert cycles -> PIT-equivalent ticks: EAX = EAX / cycles_per_tick.
+	xor	edx,edx
+	div	dword ptr [cycles_per_tick]
+	jmp	@@done
+@@pit:	mov	al,80h
+	out	43h,al
+	in	al,42h
+	mov	ah,al
+	in	al,42h
+	xchg	ah,al
+	push	eax
+	mov	al,0B0h
+	out	43h,al
+	in	al,61h
+	and	al,0FDh
+	out	61h,al
+	xor	al,al
+	out	42h,al
+	out	42h,al
+	pop	eax
+	neg	ax
+	movzx	eax,ax
+@@done:
+ENDM
+
+
+;=============================================================================
+; calibrate_tsc_(void)
+;
+; Called once from main.c at startup. Probes CPUID for TSC support, and if
+; present, measures CPU clock speed against PIT channel 2 over a known
+; PIT window and stores cycles_per_tick + tsc_freq_hz. Sets has_tsc=1 on
+; success. Costs ~55ms (one PIT 16-bit countdown cycle).
+;
+	Align 4
+calibrate_tsc_:
+	pushfd
+	pushad
+	push	ds es fs gs
+	cli
+	cld
+	; --- CPUID-feature probe ---
+	pushfd
+	pop	eax
+	mov	ecx,eax
+	xor	eax,00200000h			; toggle EFLAGS.ID
+	push	eax
+	popfd
+	pushfd
+	pop	eax
+	xor	eax,ecx				; ID bit changed?
+	jz	@@no_cpuid
+	.586p
+	mov	eax,1
+	cpuid
+	test	edx,10h				; CPUID.1.EDX bit 4 = TSC
+	.486p
+	jz	@@no_tsc
+
+	; --- Calibrate: time the PIT counting down from 65535 to 0 ---
+	mov	al,0B6h				; chan 2, mode 3, 16-bit
+	out	43h,al
+	in	al,61h				; gate ON
+	or	al,01h
+	out	61h,al
+	; Load counter = 0 -> counts down from 65535. Snapshot rdtsc immediately.
+	xor	al,al
+	out	42h,al
+	out	42h,al
+	.586p
+	rdtsc
+	.486p
+	mov	[tsc_start_lo],eax
+	mov	[tsc_start_hi],edx
+
+	; Wait for the PIT to count down most of one cycle. We poll the current
+	; count (latched via 0x80) and break when it has wrapped near to 0.
+	; To avoid jitter from the small window after 0, we wait until the
+	; count is < 0x1000 (well past mid-cycle but before wrap).
+@@wait:	mov	al,80h				; latch chan 2
+	out	43h,al
+	in	al,42h				; LSB
+	mov	ah,al
+	in	al,42h				; MSB
+	xchg	ah,al
+	cmp	ax,01000h
+	ja	@@wait
+
+	; --- Snapshot rdtsc again; AX = remaining PIT count ---
+	push	eax				; save PIT count
+	.586p
+	rdtsc
+	.486p
+	; Cycle delta
+	sub	eax,[tsc_start_lo]
+	sbb	edx,[tsc_start_hi]
+	; Discard high 32 bits; calibration window is 55ms; even at 70 GHz
+	; that's only 3.85e9 cycles, well within 32 bits.
+	pop	ecx				; ECX = current PIT count
+	; Ticks elapsed = 65535 - remaining_count (approximately, ignoring the
+	; small overhead before the first rdtsc snapshot â€” well under 1 tick).
+	mov	ebx,65535
+	movzx	ecx,cx
+	sub	ebx,ecx				; EBX = PIT ticks elapsed
+	xor	edx,edx
+	div	ebx				; EAX = cycles per PIT tick
+	mov	[cycles_per_tick],eax
+
+	; tsc_freq_hz = cycles_per_tick * 1193181 (informational)
+	mov	ebx,1193181
+	mul	ebx				; EDX:EAX = freq in Hz
+	mov	[tsc_freq_hz],eax
+	; (tsc_freq_hz overflows 32 bits above ~3.6 GHz; informational only,
+	; the cycles_per_tick value is what's actually used by TIMER_STOP.)
+
+	mov	byte ptr [has_tsc],1
+
+	; Disable PIT gate so we leave it in a clean state.
+	in	al,61h
+	and	al,0FDh
+	out	61h,al
+	xor	al,al
+	out	42h,al
+	out	42h,al
+	jmp	@@done
+
+@@no_tsc:
+@@no_cpuid:
+	; Leave has_tsc=0; macros fall through to PIT path.
+@@done:	sti
+	pop	gs fs es ds
+	popad
+	popfd
+	ret
+
+
+;=============================================================================
+; has_tsc_(void) - return 1 if rdtsc-based timing is in use, else 0
+;
+	Align 4
+has_tsc_:
+	movzx	eax,byte ptr [has_tsc]
+	ret
+
+
+;=============================================================================
+; tsc_freq_hz_(void) - return CPU frequency in Hz (0 if TSC not in use)
+;
+	Align 4
+tsc_freq_hz_:
+	mov	eax,[tsc_freq_hz]
+	ret
+
+
+.CODE
+;ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 ;=============================================================================
 	Align 4
@@ -1175,35 +1397,11 @@ test_low_movsw_:
 	mov	es,bx
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_low
@@ -1236,35 +1434,11 @@ test_low_movsd_:
 	mov	es,bx
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_low
@@ -1297,35 +1471,11 @@ test_low_stosw_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_low
@@ -1357,35 +1507,11 @@ test_low_stosd_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_low
@@ -1432,35 +1558,11 @@ test_high_movsw_:
 	mov	es,bx
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_hi
@@ -1493,35 +1595,11 @@ test_high_movsd_:
 	mov	es,bx
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_hi
@@ -1553,35 +1631,11 @@ test_high_stosw_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_hi
@@ -1613,35 +1667,11 @@ test_high_stosd_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_hi
@@ -1682,35 +1712,11 @@ test_vid_movsw_:
 	mov	es,ax
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_vid
@@ -1745,35 +1751,11 @@ test_vid_movsd_:
 	mov	es,ax
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	movsd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es ds
 	call	dealloc_vid
@@ -1803,35 +1785,11 @@ test_vid_stosw_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosw
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_vid
@@ -1860,35 +1818,11 @@ test_vid_stosd_:
 	mov	eax,PATTERN
 
 	Align 4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rep	stosd
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 
 	pop	es
 	call	dealloc_vid
@@ -2116,7 +2050,7 @@ gotoxy_:
 
 
 .DATA
-;ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
+;ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 __586ack	db 0,0
 __586dat1	dq 18.2064971
 __586dat2	dq 10.0000000

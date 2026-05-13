@@ -73,6 +73,11 @@ extern	dword get_himem_size(void);
 extern	dword get_total_size(void);
 extern	dword get_pmodew_ver(void);
 
+/* v9.12.1: rdtsc-based timing additions */
+extern	void  calibrate_tsc(void);
+extern	dword has_tsc(void);
+extern	dword tsc_freq_hz(void);
+
 extern	dword test_cpu(void);
 extern	dword test_fpu(void);
 extern	dword test_int(void);

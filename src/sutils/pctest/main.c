@@ -167,6 +167,11 @@ void get_system_information(void)
 
 void measure_system_speed(void)
 {
+	/* v9.12.1: calibrate rdtsc against PIT once before any benchmarks
+	 * run. If CPUID's TSC feature flag is clear, calibrate_tsc() is a
+	 * no-op and the TIMER_* macros fall back to direct PIT use. */
+	calibrate_tsc();
+
 	cprintf("Measuring system performance: ");
 	cprintf("CPU..."); measure_cpu_speed();
 	cprintf("\b\b\b\b\b\bFPU..."); measure_fpu_speed();
@@ -335,9 +340,9 @@ void show_system_information(void)
 	printf("\n");
 	printf("%s/%s/%s mode switch rate by INT: ", modetype[2], modetype[_modetype], modetype[2]);
 	printf("%4.1f switches/second\n",(1/ (intPR_speed+intRP_speed)+0.05) );
-	printf("(%2.2f æsec/switch:  %1.1f æsec up + %1.1f æsec down)", (intRP_speed+intPR_speed)*1000000+0.005, (intRP_speed*1000000)+0.05, (intPR_speed*1000000)+0.05);
-	printf("  IRQ up switch: %1.1f æsec\n",(irqRP_speed*1000000)+0.05);
-//	printf("IRQ down switch: %1.1f æsec\n",(irqPR_speed*1000000)+0.05);
+	printf("(%2.2f ï¿½sec/switch:  %1.1f ï¿½sec up + %1.1f ï¿½sec down)", (intRP_speed+intPR_speed)*1000000+0.005, (intRP_speed*1000000)+0.05, (intPR_speed*1000000)+0.05);
+	printf("  IRQ up switch: %1.1f ï¿½sec\n",(irqRP_speed*1000000)+0.05);
+//	printf("IRQ down switch: %1.1f ï¿½sec\n",(irqPR_speed*1000000)+0.05);
 	printf("Protected mode code is running at CPL=%d",_codecpl);
 	if(_codecpl==0)
 		printf(" (lowest),");
