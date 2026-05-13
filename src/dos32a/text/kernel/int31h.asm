@@ -109,6 +109,8 @@ int31h_tab	label word
 ;---------------------------------------------------------------------
 	dw	0400h		; get DPMI version
 	dw	int31h_0400
+	dw	0401h		; get DPMI capabilities			*1.0*
+	dw	int31h_0401
 ;---------------------------------------------------------------------
 	dw	0500h		; get free mem info
 	dw	int31h_0500
@@ -120,6 +122,12 @@ int31h_tab	label word
 	dw	int31h_0503
 	dw	050Ah		; get linear mem block and size
 	dw	int31h_050A
+	dw	050Bh		; get memory information		*1.0*
+	dw	int31h_050B
+	dw	0506h		; get page attributes			*1.0*
+	dw	int31h_0506
+	dw	0507h		; set page attributes			*1.0*
+	dw	int31h_0507
 ;---------------------------------------------------------------------
 	dw	0600h		; lock linear region			*VM*
 	dw	int31h_0600
@@ -132,6 +140,10 @@ int31h_tab	label word
 	dw	0604h		; get page size				*VM*
 	dw	int31h_0604
 ;---------------------------------------------------------------------
+	dw	0700h		; reserved (paging) - no-op		*1.0*
+	dw	int31h_0700
+	dw	0701h		; reserved (paging) - no-op		*1.0*
+	dw	int31h_0700
 	dw	0702h		; mark page				*VM*
 	dw	int31h_0702
 	dw	0703h		; discard page				*VM*
@@ -1190,14 +1202,58 @@ int31h_0306:					; get raw mode switch addresses
 int31h_0400:
 	add	esp,26h				; adjust stack
 	pop	ds				; restore DS
-	mov	ax,005Ah			; return version 0.9
-	mov	bx,0003h			; capabilities
+	mov	ax,0100h			; return version 1.0 (was 005Ah / 0.9 in original)
+	mov	bx,0003h			; capabilities (BX[0]=32-bit host, BX[1]=paging)
 	cmp	cs:pmodetype,2
 	jnz	@@1
-	mov	bl,1
+	mov	bl,1				; XMS-only -> drop paging bit
 @@1:	mov	cl,cs:cputype			; processor type
 	mov	dx,wptr cs:picslave		; master and slave PIC values
 	jmp	int31oknopop			; return ok, don't pop registers
+
+
+;=============================================================================
+; Get DPMI Capabilities (DPMI 1.0 fn 0401h)
+;
+; Out:  AX = capability flags
+;          bit 0 = paging supported
+;          bit 1 = exceptions restartable
+;          bit 5 = host buffered exceptions (we do)
+;          bit 6 = host write-protects client (null-pointer protect)
+;       BH = host minor version (12 decimal, for v9.12)
+;       CL = host major version (9)
+;       DX = reserved (0)
+;       ES:(E)DI = caller-supplied buffer filled with ASCIIZ vendor description
+;       CF clear
+;
+int31h_0401:
+	; Fill caller's buffer at ES:[EDI] with our vendor string. cs: override
+	; on the load picks up the source in _KERNEL; pushad-saved EDI restores
+	; to caller's original on return, so we can move EDI freely here.
+	mov	esi,offs vendor_string_0401
+@@1:	mov	al,cs:[esi]
+	mov	es:[edi],al
+	inc	esi
+	inc	edi
+	test	al,al
+	jnz	@@1
+	; Set return values on the pushad frame:
+	mov	wptr [esp+28],0061h		; AX = caps (paging|wp-cap|wp-client)
+	mov	wptr [esp+24],0009h		; CX:  CL=9 (major)
+	mov	wptr [esp+16],0C00h		; BX:  BH=12 (minor)
+	mov	dword ptr [esp+20],0		; EDX = 0 (reserved)
+	jmp	int31ok
+
+vendor_string_0401:
+	db	'DOS/32A v9.12.1',0
+
+
+;=============================================================================
+; Reserved Paging fns 0700h / 0701h (DPMI 1.0): no-ops on flat memory model.
+; Per the spec, both are advisory; returning CF clear is a valid "did it".
+;
+int31h_0700:
+	jmp	int31ok
 
 
 ;=============================================================================
@@ -1518,6 +1574,161 @@ int31h_050A:
 	shr	esi,16
 	jmp	int31oksinoax
 
+
+;=============================================================================
+; Get Memory Information (DPMI 1.0 fn 050Bh)
+;
+; In:	ES:(E)DI = pointer to 128-byte buffer
+; Out:	buffer filled with memory-info structure (see field map below); CF clear
+;
+; DOS/32A has a flat memory model with a single VM; many of the multi-VM
+; accounting fields collapse to the same numbers as the single-VM ones.
+;
+;	+00h  physical memory controlled by DPMI host (bytes)
+;	+04h  total allocated virtual memory by host (bytes)
+;	+08h  total available virtual memory by host (bytes)
+;	+0Ch  total allocated virtual memory of this VM (= host)
+;	+10h  total available virtual memory of this VM (= host)
+;	+14h  allocated bytes by this client (= host)
+;	+18h  available bytes to this client (= host)
+;	+1Ch  bytes locked by this client (= 0, no locking accounting)
+;	+20h  maximum lockable bytes for this client (= available)
+;	+24h  highest usable linear address (= mem_top - 1)
+;	+28h  largest free memory block (bytes)
+;	+2Ch  minimum allocation unit (= 4096, page size)
+;	+30h  allocation alignment unit (= 16, paragraph)
+;	+34h..+7Fh  reserved, must be 0FFh per spec
+;
+int31h_050B:
+	push	edi				; preserve caller's EDI for return
+	; Fill bytes +34h..+7Fh (76 bytes) with FFh first (reserved fill).
+	push	edi
+	add	edi,34h
+	mov	ecx,(80h - 34h)
+	mov	al,0FFh
+	cld
+	rep	stos byte ptr es:[edi]
+	pop	edi
+
+	; Need mem_free, mem_top, largest free block. The classic 0500h path
+	; computes these via int31_checkblocks + int31_getfreemem (which set
+	; EAX = largest free, and incidentally walk the free list). Reuse it.
+	mov	eax,cs:mem_ptr
+	or	eax,cs:mem_free
+	xor	edx,edx				; EDX will be largest free block
+	jz	@@1				; if no memory, leave EDX=0
+	call	int31_checkblocks
+	call	int31_getfreemem		; EAX = largest free, ECX = total free
+	mov	edx,eax
+
+@@1:	mov	eax,cs:mem_free			; total available virt mem (bytes)
+	mov	ebx,cs:mem_top
+	sub	ebx,cs:mem_free			; allocated bytes (mem_top - free)
+	mov	[edi+00h],eax			; physical mem controlled by host
+	mov	[edi+04h],ebx			; total allocated virt mem
+	mov	[edi+08h],eax			; total available virt mem
+	mov	[edi+0Ch],ebx			; this-VM allocated (= host)
+	mov	[edi+10h],eax			; this-VM available (= host)
+	mov	[edi+14h],ebx			; client allocated
+	mov	[edi+18h],eax			; client available
+	mov	dword ptr [edi+1Ch],0		; client locked bytes (no tracking)
+	mov	[edi+20h],eax			; max lockable for client
+	mov	eax,cs:mem_top
+	dec	eax
+	mov	[edi+24h],eax			; highest usable linear addr
+	mov	[edi+28h],edx			; largest free block
+	mov	dword ptr [edi+2Ch],1000h	; min alloc unit = 4096 (page size)
+	mov	dword ptr [edi+30h],10h		; alloc alignment = 16 (para)
+	pop	edi
+	jmp	int31ok
+
+
+;=============================================================================
+; Get Page Attributes (DPMI 1.0 fn 0506h)
+;
+; In:	ESI = memory block handle
+;	EBX = byte offset within block (rounded down to page if misaligned)
+;	ECX = page count
+;	ES:EDX = buffer (ECX 16-bit attribute words)
+; Out:	ES:[EDX..EDX+ECX*2-1] filled with attribute words; CF clear
+;	On error: CF set, AX = 8023h (bad handle) or 8025h (bad addr/range)
+;
+; DOS/32A has a flat memory model with no per-page protection tracking, so
+; every page of a valid block reports as: committed (type=1) + read/write
+; (bit 3=1) + no accessed/dirty info (bit 4=0). Attribute word = 0009h.
+;
+int31h_0506:
+	call	int31_checkifmemavail
+	call	int31_checkblocks
+	call	int31_checkhandle		; validate ESI, falls through on ok
+	mov	eax,[esi+04h]			; block size word with bit31=used
+	btr	eax,31
+	jnc	int31fail8023			; not used -> bad handle
+	; round EBX down to page boundary, validate range fits in block
+	and	ebx,0FFFFF000h			; page-align
+	mov	edi,ecx
+	shl	edi,12				; EDI = ECX * 4096 (bytes)
+	add	edi,ebx				; EDI = end byte offset
+	cmp	edi,eax
+	ja	int31fail8025			; range exceeds block size
+	; Walk and write ECX attribute words at ES:EDX
+	jecxz	@@done				; zero-page query: succeed immediately
+	mov	ax,0009h			; committed | RW
+@@fill:	mov	es:[edx],ax
+	add	edx,2
+	dec	ecx
+	jnz	@@fill
+@@done:	jmp	int31ok
+
+
+;=============================================================================
+; Modify Page Attributes (DPMI 1.0 fn 0507h)
+;
+; In:	ESI = memory block handle
+;	EBX = byte offset within block (page-aligned)
+;	ECX = page count
+;	ES:EDX = buffer of ECX 16-bit attribute words to apply
+; Out:	CF clear on success; or CF set + AX = 8021h (bad value) and
+;	ECX = number of pages successfully modified before the error.
+;
+; DOS/32A's flat memory model can't enforce per-page protection. We accept
+; any caller request that asks for "committed" (type 0 or 1) and treat it
+; as a no-op. We reject requests for "mapped" (type 2) since we don't map.
+;
+int31h_0507:
+	call	int31_checkifmemavail
+	call	int31_checkblocks
+	call	int31_checkhandle
+	mov	eax,[esi+04h]
+	btr	eax,31
+	jnc	int31fail8023
+	and	ebx,0FFFFF000h
+	mov	edi,ecx
+	shl	edi,12
+	add	edi,ebx
+	cmp	edi,eax
+	ja	int31fail8025
+	jecxz	@@done
+	push	ecx				; save total page count
+	xor	ecx,ecx				; ECX = pages successfully done
+@@loop: mov	ax,es:[edx]
+	mov	ebx,eax
+	and	ebx,7				; type field (bits 0-2)
+	cmp	ebx,2				; "mapped" not supported
+	je	@@bad
+	cmp	ebx,3				; types 3-7 reserved/invalid
+	jae	@@bad
+	; types 0 (uncommitted) and 1 (committed) accepted as no-ops
+	add	edx,2
+	inc	ecx
+	cmp	ecx,[esp]			; reached caller's count?
+	jb	@@loop
+	pop	eax				; discard saved count
+@@done:	jmp	int31ok
+@@bad:	pop	eax				; discard saved count
+	mov	wptr [esp+24],cx		; return ECX = pages done
+	mov	ax,8021h			; bad value
+	jmp	int31failax
 
 
 ;-----------------------------------------------------------------------------
