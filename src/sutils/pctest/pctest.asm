@@ -779,37 +779,13 @@ test_cpu_:
 	mov	ebx,1
 
 	Align	4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rept	1000
 	div	ebx
 	endm
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 	mov	[esp+1Ch],eax
 	call	enable_irqs
 	sti
@@ -912,37 +888,13 @@ test_risc_:
 	mov	edx,1
 
 	Align	4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rept	1000
 	add	eax,edx
 	endm
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 	mov	[esp+1Ch],eax
 	call	enable_irqs
 	sti
@@ -966,37 +918,13 @@ test_priv_:
 	xor	eax,eax
 
 	Align	4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rept	1000
 	cli
 	endm
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 	mov	[esp+1Ch],eax
 	call	enable_irqs
 	sti
@@ -1029,37 +957,13 @@ test_fpu_:
 	fld1				; load +1 into ST(0)
 
 	Align	4
-	mov	al,0B6h
-	out	43h,al
-	in	al,61h
-	or	al,01h
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
+	TIMER_START
 
 	rept	1000
 	fadd	st(0),st(1)
 	endm
 
-	mov	al,80h
-	out	43h,al
-	in	al,42h
-	mov	ah,al
-	in	al,42h
-	xchg	ah,al
-	push	eax
-	mov	al,0B0h
-	out	43h,al
-	in	al,61h
-	and	al,0FDh
-	out	61h,al
-	xor	al,al
-	out	42h,al
-	out	42h,al
-	pop	eax
-	neg	ax
-	movzx	eax,ax
+	TIMER_STOP
 	mov	[esp+1Ch],eax
 	finit				; reinitialize FPU
 	call	enable_irqs
