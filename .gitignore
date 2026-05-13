@@ -12,6 +12,9 @@
 # Container build output
 /out/
 
+# Packaged release artifacts (rebuildable from `make build`)
+/release/
+
 # Precompiled Headers
 *.pch
 
