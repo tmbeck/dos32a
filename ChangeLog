@@ -4,6 +4,76 @@
 
 
 [2026-05-13]
+DOS/32 Advanced DOS Extender, version 9.1.2.2
+=============================================
+
+  Feature release on top of v9.12.1. Adds DPMI 1.0 support and the
+  community VXD loader patch; no behavior change for code that worked
+  under v9.12.1.
+
+DOS Extender (DOS32A.EXE):
+--------------------------
++ Feature: claim DPMI 1.0 + add the safe set of 1.0 functions.
+
+  - INT 31h fn 0400h (Get DPMI Version) now reports 0100h (DPMI 1.0)
+    instead of 005Ah (0.9). DOS/32A always implemented several 1.0
+    functions (050Ah, 0702/0703h, 0900-0902h) but reported as 0.9, so
+    apps querying the version never saw them.
+
+  - INT 31h fn 0401h (Get DPMI Capabilities, new): returns capability
+    flags AX = 0061h (paging + write-protect-cap + write-protect-client),
+    host major.minor = 9.12, fills caller's ES:EDI buffer with vendor
+    description "DOS/32A v9.12.1".
+
+  - INT 31h fn 050Bh (Get Memory Information, new): fills 128-byte info
+    struct with physical/virtual mem totals, largest free block, page
+    size (4096), alignment (16). Derived from existing memory tracking.
+
+  - INT 31h fn 0506h (Get Page Attributes, new) and 0507h (Modify Page
+    Attributes, new): real implementations. DOS/32A's flat memory model
+    has no per-page tracking, so 0506 returns "committed + RW" for all
+    pages in a valid block (attribute word 0009h). 0507 accepts
+    "committed" requests as no-op, rejects "mapped" with 8021h.
+
+  - INT 31h fn 0700h/0701h (page-pageable hints, new): no-op. We don't
+    page, so the hint has nothing to act on.
+
++ Feature: VXD loader patch (community contribution).
+
+  Cherry-picked from yetmorecode/dos32a-ng@bf28a94 + @24a75e8
+  (originally by leecher1337). +33 lines in src/dos32a/loader.asm's
+  apply_fixups. Adds the SRCLIST (fixup source-byte bit 0x20) decode
+  case to the LE/LX fixup walker.
+
+  Effect: LE/LX executables whose linker emits SRCLIST fixup records
+  (notably MSVC-built VXDs and some non-Watcom LE binaries) now load.
+  The 2006 dos32a treated SRCLIST as "unrecognized fixup data" and
+  bailed with error 4005h. Watcom-emitted LE/LX (including dos-rs's
+  output) doesn't use SRCLIST, so dos-rs round-trip behavior unchanged.
+
+
+PCTEST (PCTEST.EXE):
+--------------------
++ Feature: rdtsc-based timing on 586+, with PIT fallback.
+
+  16 of 18 PCTEST benchmarks now use a TIMER_START / TIMER_STOP macro
+  pair that prefers rdtsc when CPUID's TSC bit is set and falls back to
+  the legacy PIT channel-2 program/read otherwise. calibrate_tsc()
+  runs once at startup to measure cycles-per-PIT-tick so TIMER_STOP
+  returns PIT-equivalent units either way; main.c's existing
+  "timer_time = 1193181" math works unchanged.
+
+  Converted: test_cpu_ (sub-586 branch only — 586+ already used
+  rdtsc), test_risc_, test_priv_, test_fpu_, and the 12 memory tests
+  test_low/high/vid_movsw/movsd/stosw/stosd.
+
+  Not converted: test_int_, test_irq_, and their real-mode handlers
+  int80_RM, int08_RM. These span PM<->RM mode switches; the RM
+  handlers read the PIT directly. Cross-mode TSC sync isn't worth the
+  complexity here, and the relative numbers are already meaningful.
+
+
+[2026-05-13]
 DOS/32 Advanced DOS Extender, version 9.1.2.1
 =============================================
 
