@@ -46,7 +46,7 @@ run: $(EXE)
 
 clean:
 	rm -rf $(OUT)
-	find src -name '*.obj' -delete
-	find src -name '*.lst' -delete
-	find src -name '*.map' -delete
-	find src -name '*.exe' -delete
+	@# Case-insensitive on macOS APFS: DOS tools emit UPPERCASE .OBJ / .LST etc.
+	find src \( -iname '*.obj' -o -iname '*.lst' -o -iname '*.map' \
+	         -o -iname '*.exe' -o -iname '*.err' -o -iname '*.lib' \) -delete
+	@rm -f build.log probe.log t.c t.exe t32.c t32.exe

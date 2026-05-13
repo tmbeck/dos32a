@@ -8,20 +8,37 @@ This is an **archival mirror** of DOS/32 Advanced DOS Extender v9.12 (released 2
 
 Treat the source as a historical artifact. The primary downstream consumer is the sibling project `dos-rs/` (`/Users/tbeck/src/dos/dos-rs/`), which uses `dos32a.exe` as the protected-mode-extender stub it prepends to its emitted LX executables.
 
-## How to rebuild dos32a.exe
+## How to rebuild the v9.12.1 binaries
 
-The repository ships a containerized build that runs **headless DOSBox + Borland TASM 5 + TLINK 7** against the unmodified 2006 assembly source. The original DOS/Windows toolchain runs unchanged inside the emulator — no source patches, no assembler porting.
+The repository ships a containerized build that runs **headless DOSBox-X + Borland TASM 5 + TLINK 7 + Open Watcom v2** against the original assembly + C source. The 1996-2006 DOS/Windows toolchain runs unchanged inside the emulator — no source patches.
 
 ```sh
-make image    # one-time: build the container image (Ubuntu 26.04 + dosbox)
-make build    # produce out/dos32a.exe
-make run      # smoke-test the rebuilt stub under dosbox-x (host-side)
-make shell    # bash shell inside the container, for poking at TASM/TLINK
+make image    # one-time: build the container image (Ubuntu 26.04 + dosbox-x + OW v2 + Borland TASM/TLINK)
+make build    # produce out/{DOS32A,SB,SC,SD,SS,STUB32A,STUB32C,SVER,PCTEST}.EXE + SDEBUG.LIB
+make run      # smoke-test out/DOS32A.EXE under dosbox-x (host-side)
+make shell    # bash shell inside the container, for poking at the build tools
 ```
 
-The build is **linux/amd64-only** (dosbox is x86_64). On Apple Silicon, Docker Desktop runs it under Rosetta 2.
+Native arm64 on Apple Silicon (no Rosetta) and native amd64 on Linux/CI hosts — DOSBox-X emulates x86 internally regardless of host arch.
 
-Output: `out/dos32a.exe`. The 2006 reference binary at `binw/dos32a.exe` is intentionally left untouched as a regression oracle. **Don't overwrite `binw/`** — that's the gold copy.
+Outputs land in `out/`. The 2006 reference binaries at `binw/` are intentionally left untouched as a regression oracle. **Don't overwrite `binw/`** — that's the gold copy.
+
+### What the build does, step by step
+
+1. **dos32a.exe** — `tasm32 kernel.asm + tasm32 dos32a.asm + tlink /3 dos32a kernel,d:\out\dos32a.exe`. Plain real-mode link, ~28 KB output.
+2. **Plants `out/dos32a.exe` at `$WATCOM/binw/dos32a.exe`** inside the container so `wcl386 -l=dos32a` finds the freshly-built stub.
+3. **stub32a.exe / stub32c.exe** — TASM + Watcom `wcl -lr` (16-bit real-mode DOS apps; tiny stubs).
+4. **sb / sc / sd / pctest** — TASM (asm helpers) + Watcom `wcl386 -l=dos32a` (32-bit pmode apps with embedded dos32a stub).
+5. **sdebug.lib** — TASM + Watcom `wlib` (static library).
+6. **sver** — Watcom `wcl -lr` (pure 16-bit DOS C program).
+7. **ss.exe** — *NOT* rebuilt. `src/ss/main.c:517` calls `PrintC()` which isn't defined in the published source tree (only `Print`, `Print_At`, `CloseAllWindows` in `iface.c`). The 2006 SS.EXE is copied from `binw/ss.exe` unchanged. If we ever locate or stub the missing function, switch the relevant step in `make.bat`.
+
+### Toolchain layout inside the container
+
+- `/app/bin/{TASM32.EXE,TLINK.EXE,RTM.EXE,32RTM.EXE,DPMI16BI.OVL,DPMI32VM.OVL}` — Borland tools, vendored from `dos32a-ng@880be04` (see `bin/NOTICE.md`).
+- `/opt/watcom/binw/{wcl,wcl386,wlib,wlink}.exe` — Open Watcom v2 DOS-hosted toolchain. Despite the name, `binw/` is OW v2's MS-DOS MZ-format host directory (`binp/` is OS/2-hosted, doesn't run in DOSBox).
+- `/opt/watcom/h/` — C headers.
+- `/opt/watcom/lib286|lib386/` — Watcom C runtime libraries.
 
 ### How the container build is structured
 

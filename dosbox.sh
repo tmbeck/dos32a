@@ -5,4 +5,4 @@ set -e
 # Create out/ before launching DOSBox so the link step doesn't fail.
 mkdir -p /app/out
 
-SDL_VIDEODRIVER=dummy dosbox make.bat -config=./conf/dosbox.conf -exit
+SDL_VIDEODRIVER=dummy dosbox-x -silent -fastlaunch -nogui -nomenu -exit -conf ./conf/dosbox.conf

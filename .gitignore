@@ -9,6 +9,10 @@
 *.lst
 *.LST
 
+# Compiler / linker error files (Open Watcom wcc386 emits foo.ERR per source)
+*.err
+*.ERR
+
 # Container build output
 /out/
 
