@@ -5,6 +5,13 @@
 *.map
 *.exp
 
+# Assembler listings (TASM /la output)
+*.lst
+*.LST
+
+# Container build output
+/out/
+
 # Precompiled Headers
 *.pch
 
