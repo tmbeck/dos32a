@@ -3,6 +3,43 @@
 			*****************************************
 
 
+[2026-05-12]
+DOS/32 Advanced DOS Extender, version 9.1.2.1
+=============================================
+
+  Maintenance release on top of v9.1.2; no API or behavior changes for
+  applications that worked correctly on v9.1.2. Two clear bugs identified
+  in a code audit are fixed; no other source changes. Build harness is
+  containerized (DOSBox + Borland TASM 5 + TLINK 7) for reproducibility on
+  modern hosts.
+
+DOS Extender (DOS32A.EXE):
+--------------------------
++ Bugfix: CLIENT/config.asm cfg_env_nowarn - the bounds check on the parsed
+  warning code was byte-wide (cmp al,6) where it should have been word-wide
+  (cmp ax,6). Inputs like /NOWARN:9256 satisfied the byte check because
+  (N - 9000) mod 256 was <= 6, then the function wrote a zero word at an
+  offset 256+ bytes past the errtab_90xx table, corrupting whatever data or
+  code was adjacent in the _TEXT16 segment. Now correctly rejects any
+  warning code outside 9001..9006.
+
+  Reproduction: SET DOS32A=/NOWARN:9256 and run any DOS/32A-extended app
+  on the pre-fix binary.
+
++ Bugfix: CLIENT/misc.asm search_for_le - the inner-loop PE signature
+  literal was 'PE' (0x5045) but real PE-format files on disk start with the
+  bytes "PE\0\0", which loads as the word 0x4550. The literal needs to be
+  'EP' (which TASM evaluates as 0x4550) to match. The outer block at the
+  same site already used 'EP' correctly; this fix makes the inner scan
+  consistent. Effect of the bug: MZ-stub-wrapped PE files reached via the
+  scan path were not detected and the loader reported error 3003h
+  ("no app in file") instead of dispatching to the PE branch.
+
+  Reproduction: run an MZ-wrapped Windows PE under DOS/32A on the pre-fix
+  binary; error 3003h surfaces instead of the documented preliminary PE
+  recognition added in v9.1.0.
+
+
 [2006-04-20]
 DOS/32 Advanced DOS Extender, version 9.1.2
 ===========================================

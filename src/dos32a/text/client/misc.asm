@@ -824,8 +824,8 @@ search_for_le:
 	jz	@@3
 	cmp	ax,'CL'			; 'LC' type
 	jz	@@3
-	cmp	ax,'PE'			; 'PE' type
-	jz	@@3
+	cmp	ax,'EP'			; 'PE' type (9.12.1 fix: literal must be 'EP' for the
+	jz	@@3			;   file-on-disk byte order, matching the outer check)
 @@4:	add	edx,2
 	add	ebp,2			; increment pointer in file
 	loop	@@2

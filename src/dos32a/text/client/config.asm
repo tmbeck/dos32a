@@ -410,7 +410,7 @@ cfg_env_nowarn:
 	call	get_env_num
 	sub	ax,9000
 	jb	@@0
-	cmp	al,6
+	cmp	ax,6			; full-AX bounds check (9.12.1 fix)
 	ja	@@0
 	add	ax,ax
 	mov	bx,ax
