@@ -54,6 +54,12 @@ cat target/dos/debug/hello.out   # expect the two-line Hello + FreeMemInfo outpu
 
 The path must be relative to dos-rs's repo because that container only mounts dos-rs's own directory.
 
+### Reproducibility
+
+The build is **byte-reproducible modulo a 5-byte embedded timestamp**. `src/dos32a/text/oemtitle.asm:46-47` uses TASM's `??date` / `??time` macros, which expand at assembly time to the host's wall clock and land in the `_ID32` configuration header at file offsets 590..604 of the linked exe. Two back-to-back builds on the same machine differ only in those bytes (date if the day rolled over, HH:MM:SS always). All other 27,915 bytes are identical across builds and across host architectures (arm64-native and amd64-under-Rosetta produce the same image except for the timestamp).
+
+This is the 2006 author's intent — the timestamp identifies *when* a given binary was built. If you ever need a bit-identical build (e.g., for verification against a published hash), set the container clock to a fixed value before invoking `make build`, or patch `oemtitle.asm` to use a literal string instead of `??date`/`??time`.
+
 ### Linker note: TLINK vs WCL
 
 The 2006 release linked with Watcom `wcl`; our container build uses Borland `tlink`. Both produce working DOS MZ executables that dos32a's loader is happy with. The rebuilt binary is `~27.9 KB` vs the 2006 reference's `~27.5 KB` — same code, slightly different linker metadata.

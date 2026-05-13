@@ -6,12 +6,16 @@
 # Linux container around DOSBox.
 #
 # Originally derived from yetmorecode/dos32a-ng@7d62307. Retargeted to
-# Ubuntu 26.04 (per project preference) and pinned to linux/amd64 because
-# the dosbox in Ubuntu's main repos is x86_64-only on noble+.
+# Ubuntu 26.04 (per project preference).
+#
+# No --platform pin: ubuntu:26.04 ships dosbox 0.74-3 for both amd64 and
+# arm64, and DOSBox emulates x86 internally regardless of host arch, so
+# the build output is identical across host platforms. On Apple Silicon
+# this runs natively without Rosetta.
 
 ARG UBUNTU_TAG=26.04
 
-FROM --platform=linux/amd64 ubuntu:${UBUNTU_TAG}
+FROM ubuntu:${UBUNTU_TAG}
 
 ENV DEBIAN_FRONTEND=noninteractive
 

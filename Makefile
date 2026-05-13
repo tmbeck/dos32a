@@ -8,7 +8,6 @@
 # Output: out/dos32a.exe (drop-in replacement for the 2006 binw/dos32a.exe).
 
 DOCKER_IMAGE    ?= dos32a-build:latest
-DOCKER_PLATFORM ?= linux/amd64
 OUT             ?= out
 
 EXE := $(OUT)/dos32a.exe
@@ -19,14 +18,13 @@ REF := binw/dos32a.exe
 all: build
 
 image:
-	docker build --platform=$(DOCKER_PLATFORM) -t $(DOCKER_IMAGE) .
+	docker build -t $(DOCKER_IMAGE) .
 
 build: $(EXE)
 
 $(EXE):
 	@mkdir -p $(OUT)
 	docker run --rm \
-	    --platform=$(DOCKER_PLATFORM) \
 	    -v $(CURDIR):/app \
 	    $(DOCKER_IMAGE)
 	@echo
@@ -37,7 +35,6 @@ $(EXE):
 # DOSBox config or running tasm32/tlink manually.
 shell:
 	docker run --rm -it \
-	    --platform=$(DOCKER_PLATFORM) \
 	    -v $(CURDIR):/app \
 	    --entrypoint /bin/bash \
 	    $(DOCKER_IMAGE)
