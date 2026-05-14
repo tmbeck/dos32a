@@ -42,13 +42,13 @@ PushState
 
 .386p
 ;=============================================================================
-; v9.12.2: INT 21h dispatcher replaced with a 256-entry jump table indexed
+; v9.12.3: INT 21h dispatcher replaced with a 256-entry jump table indexed
 ; by AH. The original CMP/JZ chain was Narech's own TODO item from 2002
-; (src/_todo.txt: "int21h.asm: Change CMP with a Jump table"). EBP is the
-; one general-purpose register that no handler reads live at entry --
-; every handler that uses EBP first does `mov ebp,esp` -- so it's the
-; safe scratch for the table index. AH=44h and AH=71h subdivide on AL via
-; @__44h_sub / @__71h_sub.
+; (in the now-removed src/_todo.txt: "int21h.asm: Change CMP with a Jump
+; table"). EBP is the one general-purpose register that no handler reads
+; live at entry -- every handler that uses EBP first does `mov ebp,esp` --
+; so it's the safe scratch for the table index. AH=44h and AH=71h subdivide
+; on AL via @__44h_sub / @__71h_sub.
 ;
 _int21:	cld
 	test	cs:_sys_misc,0100h	; check for CTRL-C flag
