@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1996-2002 Supernar Systems, Ltd. All rights reserved.
+ * Copyright (C) 1996-2006 by Narech K. All rights reserved.
  *
  * Redistribution  and  use  in source and  binary  forms, with or without
  * modification,  are permitted provided that the following conditions are
@@ -43,12 +43,12 @@
 #include <typedefs.h>
 
 
-	char *version		= "8.00";
-	char *errstr		= "SVER fatal:";
+	char*	version		= "9.1.2";
+	char*	errstr		= "SVER fatal:";
 
-	int fileisbound		= TRUE;
-	int extendertype	= 0;		// 1=DOS/32A, 2=STUB/32A, 3=STUB32C
-	char *fileverptr	= NULL;
+	int		fileisbound	= TRUE;
+	int		extendertype= 0;		// 1=DOS/32A, 2=STUB/32A, 3=STUB32C
+	char*	fileverptr	= NULL;
 
 	int extender_release;
 	int extender_revision;
@@ -56,38 +56,32 @@
 	int extender_minor_version;
 	int extender_build_version;
 
-	FILE *fp;
-	char buffer[512];
-	char filename[256];
-	char orgfilename[256];
+	FILE*	fp;
+	char	buffer[512];
+	char	filename[256];
+	char	orgfilename[256];
 
 
 void err_usage() {
-	printf("%s syntax is SV <execname.xxx>\n",errstr);
-	printf("            use -h or -? to get more help\n");
+	printf("%s syntax is SVER <execname.xxx | --help>\n",errstr);
 	exit(1);
 }
-
 void err_open() {
 	printf("%s cannot open file \"%s\"\n",errstr,filename);
 	exit(1);
 }
-
 void err_read() {
 	printf("%s cannot read from file \"%s\"\n",errstr,filename);
 	exit(1);
 }
-
 void err_seek() {
 	printf("%s error seeking in file \"%s\"\n",errstr,filename);
 	exit(1);
 }
-
 void err_format() {
 	printf("%s unsupported exec format in file \"%s\"\n",errstr,filename);
 	exit(1);
 }
-
 void err_extender() {
 	printf("%s \"%s\" is not a DOS/32A executable\n",errstr,filename);
 	exit(1);
@@ -97,8 +91,8 @@ void err_extender() {
 /****************************************************************************/
 void ShowCopyright()
 {
-	printf("SVER -- SUNSYS Version Report Utility  Version %s\n",version);
-	printf("Copyright (C) Supernar Systems, Ltd. 1996-2002\n");
+	printf("SVER -- Version Reporting Utility version %s\n",version);
+	printf("Copyright (C) 1996-2006 by Narech K.\n");
 }
 
 
@@ -160,19 +154,27 @@ void OpenFile()
 void ReadFileHeader()
 {
 	fread(&buffer,1,sizeof(buffer),fp);
-	if(ferror(fp)) err_read();
+	if(ferror(fp))
+		err_read();
 }
 
 void CheckFileFormat()
 {
-	if(strncmp(buffer,"MZ",2) == 0) { fileisbound=TRUE; return; }
-	if(strncmp(buffer,"LC",2) == 0) { fileisbound=FALSE; return; }
+	if(strncmp(buffer,"MZ",2) == 0)
+	{
+		fileisbound=TRUE;
+		return;
+	}
+	if(strncmp(buffer,"LC",2) == 0)
+	{
+		fileisbound=FALSE;
+		return;
+	}
 	err_format();
 }
 
 void CheckStubExtender()
 {
-
 	if(fileisbound==FALSE)
 		return;
 
@@ -261,24 +263,48 @@ void ShowExtenderVersion()
 
 
 	printf("\n");
-	if(extendertype==1)
+	if(extendertype ==1 )
 	{
 		printf("DOS/32 Advanced DOS Extender:\n");
 		printf("-----------------------------\n");
 	}
-	else if(extendertype==2)
+	else if(extendertype == 2)
 	{
 		printf("STUB/32A Standard Stub File:\n");
 		printf("----------------------------\n");
 	}
-	else if(extendertype==3)
+	else if(extendertype == 3)
 	{
 		printf("STUB/32C Configurable Stub File:\n");
 		printf("--------------------------------\n");
 	}
 
+	// v9+
+	if(extender_major_version == 0 && extender_minor_version == 0)
+	{
+		if(*(fileverptr-3-9) >= 9)
+		{
+			extender_minor_version = *(fileverptr-4-9);
+			extender_major_version = *(fileverptr-3-9);
+		}
+		else
+		{
+			if(extendertype == 2 || extendertype == 3)
+				printf("Version:        N/A\n");
+			else
+				printf("Version:        Unknown\n");
+			return;
+		}
+	}
+
+
+	if(extender_release != 0)
 	printf("Release:        %d\n",		extender_release);
+
+	if(extender_major_version < 9)
 	printf("Version:        %d.%d\n",	extender_major_version, extender_minor_version);
+	else
+	printf("Version:        %d.%d.%d\n",	extender_major_version, extender_minor_version/10, extender_minor_version%10);
 
 	if(extender_revision != 0)
 	printf("Revision:       [%c]\n",	extender_revision+'A'-1);
@@ -287,7 +313,8 @@ void ShowExtenderVersion()
 	printf("Build:          %04d\n",	extender_build_version);
 }
 
-void ShowOEMInfo() {
+void ShowOEMInfo()
+{
 	int n;
 	int objects;
 	unsigned long offs;
@@ -352,23 +379,22 @@ void ShowOEMInfo() {
 	printf("-------------------------------------------------------------------------------\n");
 	printf("%s\n",buffer);
 	printf("-------------------------------------------------------------------------------\n");
-
-
 }
 
 
 /****************************************************************************/
-void main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
-
 	setbuf(stdout, NULL);
 	ShowCopyright();
 
-	if(argc<2) err_usage();
+	if(argc<2)
+		err_usage();
 	if(	stricmp(argv[1],"-h") == 0 ||
 		stricmp(argv[1],"/h") == 0 ||
 		stricmp(argv[1],"-?") == 0 ||
-		stricmp(argv[1],"/?") == 0
+		stricmp(argv[1],"/?") == 0 ||
+		stricmp(argv[1],"--help") == 0
 	) ShowHelp();
 	strcpy(filename,argv[1]);
 
@@ -381,8 +407,9 @@ void main(int argc, char *argv[])
 	ShowExtenderVersion();
 	ShowOEMInfo();
 
+	return 0;
 }
 
 
-/* R7-07.0300.0967 */
+/* RX-ma.XXmi.NNNN */
 /* 0123456789ABCDEF  */

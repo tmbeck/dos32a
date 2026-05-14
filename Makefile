@@ -49,4 +49,8 @@ clean:
 	@# Case-insensitive on macOS APFS: DOS tools emit UPPERCASE .OBJ / .LST etc.
 	find src \( -iname '*.obj' -o -iname '*.lst' -o -iname '*.map' \
 	         -o -iname '*.exe' -o -iname '*.err' -o -iname '*.lib' \) -delete
-	@rm -f build.log probe.log t.c t.exe t32.c t32.exe
+	@# Note: -iname required because DOSBox-X writes uppercase filenames
+	@# into mounted host dirs (BUILD.LOG, not build.log).
+	@find . -maxdepth 1 \( -iname 'build.log' -o -iname 'probe.log' \
+	                       -o -iname 't.c' -o -iname 't.exe' \
+	                       -o -iname 't32.c' -o -iname 't32.exe' \) -delete

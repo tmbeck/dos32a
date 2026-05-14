@@ -3,6 +3,48 @@
 			*****************************************
 
 
+[2026-05-14]
+DOS/32 Advanced DOS Extender, version 9.1.2.4
+=============================================
+
+  Bug-fix release. Wires up a stranded SVER source update that the 2006
+  author wrote but never connected to the build. No DOS32A.EXE change;
+  only SVER.EXE is rebuilt.
+
+SUNSYS Version Report Utility (SVER.EXE):
+-----------------------------------------
++ Bugfix: SVER could not display version numbers for v9.x DOS/32A
+  executables. The 2006 author updated SVER's main.c to handle the new
+  v9+ binary version format (when the standard major/minor fields are
+  zero, the real version is encoded in bytes around the version pointer)
+  but placed the updated source in src/sver/main.c instead of the
+  src/sutils/sver/main.c path that make.bat compiles. As a result, the
+  build kept using the unchanged 2002-era main.c that only handled v6-v8
+  versions, and the v9.x SVER binary shipped with the wrong version
+  detection logic. v9.1.2's SVER.EXE that was distributed with the
+  original release thus had the same defect.
+
+  Fix: promote src/sver/main.c (the never-built v9.1.2 update) into
+  src/sutils/sver/main.c, replacing the v8.00 source. Remove the
+  src/sver/ orphan directory. SVER.EXE now correctly reports
+  "Version: 9.1.2" (and any v9.12.x) for stubbed binaries.
+
+  Reproduction: run the pre-fix SVER against a v9.x-stubbed exe; it
+  reports "Version: Unknown" or a malformed number instead of "9.1.2".
+
+  Side benefits picked up from the newer source: --help long option
+  recognised; `int main` return value (C99 conformance); refreshed
+  copyright string to "1996-2006 by Narech K."; minor formatting
+  cleanups.
+
+Build system (Makefile):
+------------------------
++ Cleanup: `make clean` now matches BUILD.LOG (uppercase) too, not just
+  build.log. DOSBox-X writes uppercase filenames into mounted host dirs;
+  on case-sensitive Linux filesystems the lowercase-only rm would leave
+  the stray log behind.
+
+
 [2026-05-13]
 DOS/32 Advanced DOS Extender, version 9.1.2.3
 =============================================
