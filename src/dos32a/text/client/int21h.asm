@@ -42,6 +42,14 @@ PushState
 
 .386p
 ;=============================================================================
+; v9.12.2: INT 21h dispatcher replaced with a 256-entry jump table indexed
+; by AH. The original CMP/JZ chain was Narech's own TODO item from 2002
+; (src/_todo.txt: "int21h.asm: Change CMP with a Jump table"). EBP is the
+; one general-purpose register that no handler reads live at entry --
+; every handler that uses EBP first does `mov ebp,esp` -- so it's the
+; safe scratch for the table index. AH=44h and AH=71h subdivide on AL via
+; @__44h_sub / @__71h_sub.
+;
 _int21:	cld
 	test	cs:_sys_misc,0100h	; check for CTRL-C flag
 	jnz	_ctrl_c
@@ -49,117 +57,9 @@ _int21:	cld
 	push	ds es
 	pushad
 
-	cmp	ah,09h		; Print string:		DS:EDX
-	jz	@__09h
+	movzx	ebp,ah			; EBP = AH (0..255)
+	jmp	word ptr cs:int21h_jt[ebp*2]
 
-	cmp	ah,1Ah		; Set DTA buffer:	DS:EDX
-	jz	@__1Ah
-	cmp	ah,1Bh		; Get DefDrive Info:	-> AL, DS:EBX, ECX EDX
-	jz	@__1Bh
-	cmp	ah,1Ch		; Get Drive Info:	AL, (-> ---//---)
-	jz	@__1Ch
-	cmp	ah,1Fh		; Get DefDrive PB:	-> AL, DS:EBX
-	jz	@__1Fh
-
-	cmp	ah,25h		; Set INT vector:	AL, DS:EDX
-	jz	@__25h
-
-	cmp	ah,2Fh		; Get DTA buffer:	-> ES:EBX
-	jz	@__2Fh
-	cmp	ah,31h		; Go TSR		AL
-	jz	@__31h
-	cmp	ah,32h		; Get Drive PB:		AL, (-> DS:EBX)
-	jz	@__32h
-	cmp	ah,34h		; Get InDOS flag:	-> ES:EBX
-	jz	@__34h
-
-	cmp	ah,35h		; Get INT vector:	AL, ES:EBX
-	jz	@__35h
-
-	cmp	ah,39h		; Create DIR:		DS:EDX
-	jz	@__39h
-	cmp	ah,3Ah		; Remove DIR:		DS:EDX
-	jz	@__3Ah
-	cmp	ah,3Bh		; Change DIR:		DS:EDX
-	jz	@__3Bh
-
-	cmp	ah,3Ch		; Create file:		CX, DS:EDX
-	jz	@__3Ch
-	cmp	ah,3Dh		; Open file:		AL, DS:EDX
-	jz	@__3Dh
-	cmp	ah,3Fh		; Read file:		BX, ECX, DS:EDX
-	jz	@__3Fh
-	cmp	ah,40h		; Write file:		BX, ECX, DS:EDX
-	jz	@__40h
-	cmp	ah,41h		; Delete file:		DS:EDX
-	jz	@__41h
-	cmp	ah,42h		; Move file ptr:	AL, BX, EDX, (->EAX)
-	jz	@__42h
-	cmp	ah,43h		; Change file attr:	CX, DS:EDX
-	jz	@__43h
-
-	cmp	ax,4402h	; IOCTL Read:		BX, ECX, DS:EDX
-	jz	@__4402h
-	cmp	ax,4403h	; IOCTL Write:		BX, ECX, DS:EDX
-	jz	@__4403h
-	cmp	ax,4404h	; IOCTL Read:		BX, ECX, DS:EDX
-	jz	@__4404h
-	cmp	ax,4405h	; IOCTL Write:		BX, ECX, DS:EDX
-	jz	@__4405h
-
-	cmp	ah,47h		; Get DIR:		DL, DS:ESI
-	jz	@__47h
-
-	cmp	ah,48h		; Alloc mem:		BX (->AX)
-	jz	@__48h
-	cmp	ah,49h		; Dealloc mem:		ES
-	jz	@__49h
-	cmp	ah,4Ah		; Realloc mem:		BX
-	jz	@__4Ah
-
-	cmp	ah,4Bh		; Execute Prog:		AL, DS:EDX, ES:EBX
-	jz	@__4Bh
-	cmp	ah,4Ch		; Terminate Prog:	AL
-	jz	@__4Ch
-
-	cmp	ah,4Eh		; Find file:		CX, DS:EDX
-	jz	@__4Eh
-	cmp	ah,4Fh		; Find next file:	-
-	jz	@__4Fh
-	cmp	ah,51h		; Get PSP segment:	(->BX)
-	jz	@__51h
-	cmp	ah,56h		; Rename file:		DS:EDX, ES:EDI
-	jz	@__56h
-	cmp	ah,5Ah		; Create temp file:	CX, DS:EDX
-	jz	@__5Ah
-	cmp	ah,5Bh		; Create new file:	CX, DS:EDX
-	jz	@__5Bh
-	cmp	ah,62h		; Get PSP selector:	(->BX)
-	jz	@__62h
-
-	cmp	ah,0FFh		; Rational DOS/4G call
-	jz	@__FFh
-
-	cmp	ah,71h		; Windows 95 long filename extensions
-	jnz	@__go21
-	cmp	al,39h		; Win95 Create DIR:	DS:EDX
-	jz	@__39h
-	cmp	al,3Ah		; Win95 Remove DIR:	DS:EDX
-	jz	@__3Ah
-	cmp	al,3Bh		; Win95 Change DIR:	DS:EDX
-	jz	@__3Bh
-	cmp	al,41h		; Win95 Delete file:	DS:EDX, CX, SI
-	jz	@__41h
-	cmp	al,43h		; Win95 Change attr:	DS:EDX, BL, CX
-	jz	@__43h
-	cmp	al,47h		; Win95 Get curr DIR:	DS:ESI, DL
-	jz	@__47h
-	cmp	al,56h		; Win95 Rename file:	DS:EDX, ES:EDI
-	jz	@__56h
-	cmp	al,60h		; Win95 True name:
-	jz	@_7160
-	cmp	al,6Ch		; Win95 C/Open file:
-	jz	@_716C
 
 @__go21:popad
 	pop	es ds
@@ -169,6 +69,46 @@ _int21:	cld
 
 _ctrl_c:mov	ax,4CFFh	; exit on CTRL-C with code 255
 	jmp	@__4Ch
+
+
+;-----------------------------------------------------------------------------
+; AH=44h IOCTL sub-dispatch (only AL=02..05 are handled; others fall through)
+;
+@__44h_sub:
+	cmp	ax,4402h		; IOCTL Read:		BX, ECX, DS:EDX
+	jz	@__4402h
+	cmp	ax,4403h		; IOCTL Write:		BX, ECX, DS:EDX
+	jz	@__4403h
+	cmp	ax,4404h		; IOCTL Read:		BX, ECX, DS:EDX
+	jz	@__4404h
+	cmp	ax,4405h		; IOCTL Write:		BX, ECX, DS:EDX
+	jz	@__4405h
+	jmp	@__go21
+
+
+;-----------------------------------------------------------------------------
+; AH=71h Windows 95 long-filename extensions sub-dispatch
+;
+@__71h_sub:
+	cmp	al,39h			; Win95 Create DIR
+	jz	@__39h
+	cmp	al,3Ah			; Win95 Remove DIR
+	jz	@__3Ah
+	cmp	al,3Bh			; Win95 Change DIR
+	jz	@__3Bh
+	cmp	al,41h			; Win95 Delete file
+	jz	@__41h
+	cmp	al,43h			; Win95 Change attr
+	jz	@__43h
+	cmp	al,47h			; Win95 Get curr DIR
+	jz	@__47h
+	cmp	al,56h			; Win95 Rename file
+	jz	@__56h
+	cmp	al,60h			; Win95 True name
+	jz	@_7160
+	cmp	al,6Ch			; Win95 Create/Open file
+	jz	@_716C
+	jmp	@__go21
 
 
 
@@ -1488,6 +1428,68 @@ _ctrl_c:mov	ax,4CFFh	; exit on CTRL-C with code 255
 	pop	es ds
 	or	bptr [esp+8],01h
 	iretd
+
+
+;=============================================================================
+; INT 21h jump table -- 256 entries, indexed by AH. Each entry is a 16-bit
+; offset into _TEXT16. v9.12.2.
+;
+		evendata
+int21h_jt	label word
+	dw 9     DUP (offset @__go21)		; 00..08
+	dw	offset @__09h			; 09 Print string
+	dw 16    DUP (offset @__go21)		; 0A..19
+	dw	offset @__1Ah			; 1A Set DTA
+	dw	offset @__1Bh			; 1B Get DefDrive Info
+	dw	offset @__1Ch			; 1C Get Drive Info
+	dw 2     DUP (offset @__go21)		; 1D..1E
+	dw	offset @__1Fh			; 1F Get DefDrive PB
+	dw 5     DUP (offset @__go21)		; 20..24
+	dw	offset @__25h			; 25 Set INT vector
+	dw 9     DUP (offset @__go21)		; 26..2E
+	dw	offset @__2Fh			; 2F Get DTA
+	dw	offset @__go21			; 30
+	dw	offset @__31h			; 31 Go TSR
+	dw	offset @__32h			; 32 Get Drive PB
+	dw	offset @__go21			; 33
+	dw	offset @__34h			; 34 Get InDOS
+	dw	offset @__35h			; 35 Get INT vector
+	dw 3     DUP (offset @__go21)		; 36..38
+	dw	offset @__39h			; 39 Create DIR
+	dw	offset @__3Ah			; 3A Remove DIR
+	dw	offset @__3Bh			; 3B Change DIR
+	dw	offset @__3Ch			; 3C Create file
+	dw	offset @__3Dh			; 3D Open file
+	dw	offset @__go21			; 3E
+	dw	offset @__3Fh			; 3F Read file
+	dw	offset @__40h			; 40 Write file
+	dw	offset @__41h			; 41 Delete file
+	dw	offset @__42h			; 42 Move file ptr
+	dw	offset @__43h			; 43 Change file attr
+	dw	offset @__44h_sub		; 44 IOCTL (sub-dispatch on AL)
+	dw 2     DUP (offset @__go21)		; 45..46
+	dw	offset @__47h			; 47 Get DIR
+	dw	offset @__48h			; 48 Alloc mem
+	dw	offset @__49h			; 49 Dealloc mem
+	dw	offset @__4Ah			; 4A Realloc mem
+	dw	offset @__4Bh			; 4B Execute Prog
+	dw	offset @__4Ch			; 4C Terminate Prog
+	dw	offset @__go21			; 4D
+	dw	offset @__4Eh			; 4E Find file
+	dw	offset @__4Fh			; 4F Find next file
+	dw	offset @__go21			; 50
+	dw	offset @__51h			; 51 Get PSP segment
+	dw 4     DUP (offset @__go21)		; 52..55
+	dw	offset @__56h			; 56 Rename file
+	dw 3     DUP (offset @__go21)		; 57..59
+	dw	offset @__5Ah			; 5A Create temp file
+	dw	offset @__5Bh			; 5B Create new file
+	dw 6     DUP (offset @__go21)		; 5C..61
+	dw	offset @__62h			; 62 Get PSP selector
+	dw 14    DUP (offset @__go21)		; 63..70
+	dw	offset @__71h_sub		; 71 Win95 LFN (sub-dispatch on AL)
+	dw 141   DUP (offset @__go21)		; 72..FE
+	dw	offset @__FFh			; FF Rational DOS/4G call
 
 
 PopState

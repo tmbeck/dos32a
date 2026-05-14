@@ -4,6 +4,49 @@
 
 
 [2026-05-13]
+DOS/32 Advanced DOS Extender, version 9.1.2.3
+=============================================
+
+  Performance release. Addresses the long-standing TODO from
+  src/_todo.txt by converting the INT 21h / INT 10h / INT 33h
+  dispatchers from CMP-chain to jump tables, and enlarging the INT 31h
+  dispatch cache from 1 to 4 slots. No API or behavior changes; all
+  improvements are dispatch-overhead reductions.
+
+DOS Extender (DOS32A.EXE):
+--------------------------
++ Perf: INT 31h (DPMI) dispatch cache enlarged from 1 slot to 4-slot
+  insert-at-front. The 2006 code cached only the most-recent function
+  number + handler address; on a workload that alternates between two
+  DPMI calls (e.g. alloc/free pairs), every call was a cache miss and
+  fell through to the linear table search of all 57 entries. With 4
+  slots, alternating-call workloads now hit the cache on every call
+  after the first 4. kernel.asm storage grew from 4 bytes to 16 bytes.
+
++ Perf: INT 21h (DOS API) dispatch replaced with a 256-entry jump
+  table on AH. Was a 30+ CMP/JZ chain. AH=44h and AH=71h subdivide on
+  AL via small CMP-chain sub-dispatchers (@__44h_sub / @__71h_sub) to
+  preserve the original IOCTL and Win95-LFN handling. EBP used as the
+  scratch register since no handler reads it live before reinitialising
+  via `mov ebp,esp`.
+
+  This was Narech Koumar's own TODO from src/_todo.txt ("int21h.asm:
+  Change CMP with a Jump table. Maybe also int10h.asm and int33h.asm").
+  The author flagged it in 2002 and never did it.
+
++ Perf: INT 10h (video) dispatch jump table. Same pattern as INT 21h.
+  AH=4Fh (VESA) subdivides on AL via @v_4Fh_sub. Smaller chain to
+  begin with -- ~5 hot entries -- so the speedup is marginal, but
+  consistent with the rest of the TODO.
+
++ Perf: INT 33h (mouse) dispatch jump table. Since all INT 33h handlers
+  require AH=0, we test AH first and fall through if nonzero, then
+  jump-table on AL. 8 hot entries on the AL side.
+
+src/_todo.txt updated with resolution status for all items.
+
+
+[2026-05-13]
 DOS/32 Advanced DOS Extender, version 9.1.2.2
 =============================================
 

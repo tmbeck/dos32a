@@ -240,9 +240,16 @@ vcpiswitchstack	dd	0		; VCPI temporary mode switch stack
 ;=============================================================================
 ;*** DPMI DATA ***
 		evendata
+INT31H_CACHE_SLOTS	= 4		; v9.12.2: enlarged from 1 to 4 slots.
+					; Insert-at-front-on-miss; no move-to-front
+					; on hit. Captures most of the benefit for
+					; alloc/free-pair workloads while keeping
+					; dispatcher code small.
 int31h_cache	label word
-	dw	0EEFFh			; last DPMI function #
-	dw	int31h_EEFF		; last DPMI function target addr
+	REPT INT31H_CACHE_SLOTS
+		dw	0EEFFh		; cached DPMI function #
+		dw	int31h_EEFF	; cached handler address
+	ENDM
 
 
 

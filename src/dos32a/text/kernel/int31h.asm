@@ -196,9 +196,22 @@ int31h_pm:
 	push	bx
 	mov	ds,cs:seldata			; DS -> KERNEL
 
-	cmp	ax,int31h_cache[0]		; check if function # is in cache
-	mov	bx,int31h_cache[2]		; retrieve cached target addr
-	je	@@2				; if cached, jump
+	; v9.12.2: 4-slot dispatch cache (was 1-slot). Each slot is 4 bytes
+	; (word: fn #, word: handler addr). On hit at any slot, dispatch
+	; immediately. On miss, fall through to the linear table search and
+	; shift the cache down to insert the new entry at slot 0.
+	cmp	ax,int31h_cache[0]		; slot 0
+	mov	bx,int31h_cache[2]
+	je	@@2
+	cmp	ax,int31h_cache[4]		; slot 1
+	mov	bx,int31h_cache[6]
+	je	@@2
+	cmp	ax,int31h_cache[8]		; slot 2
+	mov	bx,int31h_cache[10]
+	je	@@2
+	cmp	ax,int31h_cache[12]		; slot 3
+	mov	bx,int31h_cache[14]
+	je	@@2
 
 	xor	bx,bx				; do a linear search
 @@0:	cmp	ax,int31h_tab[bx]		; found function # ?
@@ -212,8 +225,18 @@ int31h_pm:
 	jmp	int31fail8001			; exit with error 8001h
 
 @@1:	mov	bx,int31h_tab[bx+2]		; get address of the appropriate handler
-	mov	int31h_cache[0],ax		; store function # in cache
-	mov	int31h_cache[2],bx		; store function addr in cache
+	; Cache insertion: shift slots [0..N-2] -> [1..N-1] (drop oldest), then
+	; write the new entry into slot 0. Uses a saved EAX for the 32-bit copies.
+	push	eax
+	mov	eax,dword ptr int31h_cache[8]	; slot 2 -> slot 3
+	mov	dword ptr int31h_cache[12],eax
+	mov	eax,dword ptr int31h_cache[4]	; slot 1 -> slot 2
+	mov	dword ptr int31h_cache[8],eax
+	mov	eax,dword ptr int31h_cache[0]	; slot 0 -> slot 1
+	mov	dword ptr int31h_cache[4],eax
+	pop	eax
+	mov	int31h_cache[0],ax		; insert new fn at slot 0
+	mov	int31h_cache[2],bx		; insert new handler at slot 0
 
 @@2:	mov	ds,selzero			; DS -> 0 (beginning of memory)
 	xchg	bx,[esp]			; store target addr & restore BX
@@ -1245,7 +1268,7 @@ int31h_0401:
 	jmp	int31ok
 
 vendor_string_0401:
-	db	'DOS/32A v9.12.2',0
+	db	'DOS/32A v9.12.3',0
 
 
 ;=============================================================================

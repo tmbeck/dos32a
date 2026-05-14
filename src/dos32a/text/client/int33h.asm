@@ -42,28 +42,21 @@ PushState
 
 .386p
 ;=============================================================================
+; v9.12.2: jump-table dispatch on AL. INT 33h handlers all require AH=0,
+; so we test AH first and fall through if nonzero. The table is then
+; indexed by AL. EBP is the scratch register.
+;
 _int33:	cld
 	push	ds es
 	pushad
 
-	cmp	ax,0009h
-	jz	@__0009h
-	cmp	ax,000Ch
-	jz	@__000Ch
-	cmp	ax,0014h
-	jz	@__0014h
-	cmp	ax,0016h
-	jz	@__0016h
-	cmp	ax,0017h
-	jz	@__0017h
-	cmp	ax,0018h
-	jz	@__0018h
-	cmp	ax,0019h
-	jz	@__0019h
-	cmp	ax,0020h
-	jz	@__0020h
+	test	ah,ah			; INT 33h handlers all require AH=0
+	jnz	@__go33
+	movzx	ebp,al
+	jmp	word ptr cs:int33h_jt[ebp*2]
 
-	popad
+
+@__go33:popad
 	pop	es ds
 	db	66h
 	jmp	cs:_int33_ip
@@ -280,6 +273,27 @@ _mus_int_pm:
 	add	esp,32h
 	mov	wptr [esp+1Ch],-1
 	jmp	@__ok
+
+
+;=============================================================================
+; INT 33h jump table -- 256 entries indexed by AL (only when AH=0). v9.12.2.
+;
+		evendata
+int33h_jt	label word
+	dw 9     DUP (offset @__go33)		; 00..08
+	dw	offset @__0009h			; 09
+	dw 2     DUP (offset @__go33)		; 0A..0B
+	dw	offset @__000Ch			; 0C
+	dw 7     DUP (offset @__go33)		; 0D..13
+	dw	offset @__0014h			; 14
+	dw	offset @__go33			; 15
+	dw	offset @__0016h			; 16
+	dw	offset @__0017h			; 17
+	dw	offset @__0018h			; 18
+	dw	offset @__0019h			; 19
+	dw 6     DUP (offset @__go33)		; 1A..1F
+	dw	offset @__0020h			; 20
+	dw 223   DUP (offset @__go33)		; 21..FF
 
 
 PopState

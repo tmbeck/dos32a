@@ -42,29 +42,39 @@ PushState
 
 .386p
 ;=============================================================================
+; v9.12.2: jump-table dispatch on AH (256 entries). AH=4Fh subdivides on AL
+; via @v_4Fh_sub (VESA functions). EBP is the scratch register -- no INT 10h
+; handler reads it live at entry.
+;
 _int10:	cld
 	push	ds es
 	pushad
 
-	cmp	ah,1Bh
-	jz	@v_1Bh
-	cmp	ah,1Ch
-	jz	@v_1Ch
-	cmp	ax,4F00h
-	jz	@v_4F00h
-	cmp	ax,4F01h
-	jz	@v_4F01h
-	cmp	ax,4F04h
-	jz	@v_4F04h
-	cmp	ax,4F09h
-	jz	@v_4F09h
-	cmp	ax,4F0Ah
-	jz	@v_4F0Ah
+	movzx	ebp,ah
+	jmp	word ptr cs:int10h_jt[ebp*2]
 
-	popad
+
+@__go10:popad
 	pop	es ds
 	db	66h
 	jmp	cs:_int10_ip
+
+
+;-----------------------------------------------------------------------------
+; AH=4Fh VESA sub-dispatch (only AL=00/01/04/09/0A are handled)
+;
+@v_4Fh_sub:
+	cmp	al,00h
+	jz	@v_4F00h
+	cmp	al,01h
+	jz	@v_4F01h
+	cmp	al,04h
+	jz	@v_4F04h
+	cmp	al,09h
+	jz	@v_4F09h
+	cmp	al,0Ah
+	jz	@v_4F0Ah
+	jmp	@__go10
 
 
 
@@ -372,6 +382,19 @@ _int10:	cld
 	jmp	@__ok
 @v_err:	mov	dptr [esp+1Ch],-1
 	jmp	@__ok
+
+
+;=============================================================================
+; INT 10h jump table -- 256 entries, indexed by AH. v9.12.2.
+;
+		evendata
+int10h_jt	label word
+	dw 27    DUP (offset @__go10)		; 00..1A
+	dw	offset @v_1Bh			; 1B
+	dw	offset @v_1Ch			; 1C
+	dw 50    DUP (offset @__go10)		; 1D..4E
+	dw	offset @v_4Fh_sub		; 4F (VESA, sub-dispatch on AL)
+	dw 176   DUP (offset @__go10)		; 50..FF
 
 
 PopState
